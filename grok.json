@@ -1,0 +1,300 @@
+{
+  "name": "Crypto Trading Bot - xAI Grok Strategy",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5a7d6816-f717-41e6-9214-7c0b73402d23",
+      "name": "Start Bot",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        15312,
+        3680
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/dryjins/aib/main/2026/l4/crypto_features_3months.csv",
+        "options": {}
+      },
+      "id": "b0841372-f669-4928-afd6-7785a1c56f2c",
+      "name": "1. Load Market Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        15536,
+        3680
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/dryjins/aib/main/2026/l4/crypto_news_3months.csv",
+        "options": {}
+      },
+      "id": "3094aee9-77d3-44e7-9b19-eebe2ed849b6",
+      "name": "2. Load News Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        15536,
+        3888
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nlet text = '';\nif (typeof input.json === 'string') text = input.json;\nelse if (input.json.data) text = input.json.data;\nelse if (input.binary) text = Buffer.from(input.binary.data.data, 'base64').toString('utf-8');\n\nconst lines = text.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim());\n\nconst result = [];\nfor (let i = 1; i < lines.length; i++) {\n  const line = lines[i];\n  if (!line.trim()) continue;\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (let char of line) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) {\n      values.push(current.trim());\n      current = '';\n    } else current += char;\n  }\n  values.push(current.trim());\n  const obj = {};\n  headers.forEach((h, idx) => obj[h] = values[idx] || '');\n  result.push({ json: obj });\n}\nreturn result;"
+      },
+      "id": "272a3c9f-57fe-4c3a-bc6f-ef792e257726",
+      "name": "Parse CSV (Market)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15760,
+        3680
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nlet text = '';\nif (typeof input.json === 'string') text = input.json;\nelse if (input.json.data) text = input.json.data;\nelse if (input.binary) text = Buffer.from(input.binary.data.data, 'base64').toString('utf-8');\n\nconst lines = text.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim());\n\nconst result = [];\nfor (let i = 1; i < lines.length; i++) {\n  const line = lines[i];\n  if (!line.trim()) continue;\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (let char of line) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) {\n      values.push(current.trim());\n      current = '';\n    } else current += char;\n  }\n  values.push(current.trim());\n  const obj = {};\n  headers.forEach((h, idx) => obj[h] = values[idx] || '');\n  result.push({ json: obj });\n}\nreturn result;"
+      },
+      "id": "7f861a5b-2a3d-4f69-befc-5be7f9382884",
+      "name": "Parse CSV (News)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15760,
+        3888
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const newsByDate = {};\nfor (const item of $input.all()) {\n  let d = item.json.date || (item.json.datetime ? item.json.datetime.split(' ')[0] : '');\n  if (!d) continue;\n  if (!newsByDate[d]) newsByDate[d] = [];\n  newsByDate[d].push(item.json.title);\n}\nreturn [{ json: { newsByDate } }];"
+      },
+      "id": "05482834-5705-4e57-80df-12a6999b934d",
+      "name": "Group News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15968,
+        3888
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "9197628f-b5ba-4a23-b8b4-99ea8e0093e5",
+      "name": "Wait for Both",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        16192,
+        3696
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nlet newsLookup = {};\nconst marketData = [];\n\nfor (const item of allItems) {\n  if (item.json.newsByDate) newsLookup = item.json.newsByDate;\n  else if (item.json.date) marketData.push(item);\n}\n\nmarketData.sort((a, b) => new Date(a.json.date) - new Date(b.json.date));\n\nconst merged = [];\nfor (const item of marketData) {\n  let d = item.json.date.split(' ')[0];\n  const news = newsLookup[d] || [];\n  const newsText = news.length > 0 ? news.slice(0, 3).join(' | ') : \"No significant news today\";\n\n  merged.push({\n    json: {\n      ...item.json,\n      news_text: newsText,\n      news_count: news.length\n    }\n  });\n}\n\nreturn merged;"
+      },
+      "id": "7942bce9-24cf-4341-89dc-2e27e1321971",
+      "name": "3. Merge Daily Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16384,
+        3696
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка промптов для xAI Grok\nconst allItems = $input.all();\n\nconst prompts = allItems.map(item => {\n  const newsText = item.json.news_text;\n  const ticker = item.json.ticker;\n  const date = item.json.date;\n  \n  return {\n    role: \"user\",\n    content: `You are a financial analyst specializing in cryptocurrency. Analyze this news and provide a structured analysis.\n\nDate: ${date}\nTicker: ${ticker}\nNews: ${newsText}\n\nReturn a valid JSON object with the following fields:\n- sentiment: \"positive\", \"negative\", or \"neutral\"\n- sentiment_score: number from -1 to 1\n- fear_greed_index: number from 0 to 100 (0 = extreme fear, 100 = extreme greed)\n- trend_strength: number from 0 to 1\n- reversal_probability: number from 0 to 1\n- risk_level: \"low\", \"medium\", \"high\", or \"extreme\"\n- recommended_action: \"buy\", \"sell\", or \"hold\"\n- confidence: number from 0 to 1\n\nReturn ONLY the JSON object, no other text.`\n  };\n});\n\nreturn [{\n  json: {\n    batch_prompts: prompts,\n    original_items: allItems.map(i => i.json)\n  }\n}];"
+      },
+      "id": "92ad2685-1a0e-44e9-b1ef-c78ca4c761dc",
+      "name": "4. Prepare Prompts for xAI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16640,
+        3696
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.ai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n  {\n    \"model\": \"grok-beta\",\n    \"messages\": $json.batch_prompts,\n    \"temperature\": 0.1,\n    \"max_tokens\": 500,\n    \"stream\": false\n  }\n}}",
+        "options": {}
+      },
+      "id": "a9cd3e2c-7bbd-4acb-a0c3-f6efa2a6eeeb",
+      "name": "5. Call xAI Grok",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16896,
+        3696
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JpB6Et6rpwyi3AFg",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Финальная стратегия с xAI Grok метриками\nconst item = $input.first();\n\n// Получаем данные\nlet apiResponse = item.json;\nconst prepareNode = $(\"4. Prepare Prompts for xAI\").first();\nconst originalItems = prepareNode.json.original_items; \n\nif (!originalItems) throw new Error(\"Missing original_items\");\n\n// Парсим ответы от xAI\nconst grokResponses = [];\nif (Array.isArray(apiResponse)) {\n  grokResponses.push(...apiResponse);\n} else if (apiResponse.choices) {\n  grokResponses.push(apiResponse);\n}\n\n// Настройки портфеля\nconst tickers = [...new Set(originalItems.map(i => i.ticker))]; \nconst initialCapitalPerTicker = 10000 / tickers.length; \nconst ALLOCATION_PERCENT = 0.02; // 2% на сделку\n\nconst portfolio = {};\ntickers.forEach(t => {\n    portfolio[t] = { \n        balance: initialCapitalPerTicker, \n        coin: 0, \n        inPosition: false, \n        entryPrice: 0,\n        lastEquity: initialCapitalPerTicker\n    };\n});\n\n// Processing Loop\nconst trades = [];\nlet totalTrades = 0;\nlet winningTrades = 0;\nlet totalProfit = 0;\nlet totalLoss = 0;\n\nconst loopCount = Math.min(originalItems.length, grokResponses.length);\n\nfor (let i = 0; i < loopCount; i++) {\n    const d = originalItems[i];\n    const grokRaw = grokResponses[i];\n    const ticker = d.ticker;\n    const price = parseFloat(d.price || d.close);\n    \n    const wallet = portfolio[ticker];\n    if (!wallet) continue;\n\n    // Парсим JSON из ответа Grok\n    let analysis = {\n        sentiment: 'neutral',\n        sentiment_score: 0,\n        fear_greed_index: 50,\n        trend_strength: 0.5,\n        reversal_probability: 0.5,\n        risk_level: 'medium',\n        recommended_action: 'hold',\n        confidence: 0.5\n    };\n    \n    try {\n        // Извлекаем текст из ответа xAI\n        let text = '';\n        if (grokRaw.choices && grokRaw.choices[0] && grokRaw.choices[0].message) {\n          text = grokRaw.choices[0].message.content;\n        } else if (typeof grokRaw === 'string') {\n          text = grokRaw;\n        }\n        \n        const jsonMatch = text.match(/\\{[\\s\\S]*\\}/);\n        if (jsonMatch) {\n            const parsed = JSON.parse(jsonMatch[0]);\n            analysis = { ...analysis, ...parsed };\n        }\n    } catch (e) {\n        console.log('Failed to parse Grok response:', e);\n    }\n\n    // Технические индикаторы\n    const rsi = parseFloat(d.rsi) || 50;\n    const bb_pos = parseFloat(d.bb_position) || 0.5;\n    const macd = parseFloat(d.macd_hist) || 0;\n    const volatility = parseFloat(d.volatility_7d) || 0;\n\n    // === СТОП-ЛОСС 2% ===\n    if (wallet.inPosition) {\n        const lossPercent = ((wallet.entryPrice - price) / wallet.entryPrice) * 100;\n        const profitPercent = ((price - wallet.entryPrice) / wallet.entryPrice) * 100;\n        \n        if (lossPercent > 2) {\n            const sellValue = wallet.coin * price;\n            const pnl = sellValue - (wallet.coin * wallet.entryPrice);\n            \n            if (pnl > 0) winningTrades++;\n            else totalLoss += Math.abs(pnl);\n            \n            wallet.balance += sellValue;\n            wallet.coin = 0;\n            wallet.inPosition = false;\n            totalTrades++;\n            \n            trades.push({\n                date: d.date, ticker, price,\n                decision: 'sell', action: 'sell',\n                pnl: pnl.toFixed(2),\n                rsi: rsi.toFixed(2),\n                sentiment: 'stop_loss',\n                fear_greed: analysis.fear_greed_index,\n                equity: wallet.balance.toFixed(2),\n                reason: `STOP LOSS: -${lossPercent.toFixed(1)}%`\n            });\n            continue;\n        }\n        \n        if (profitPercent > 8) {\n            const sellValue = wallet.coin * price;\n            const pnl = sellValue - (wallet.coin * wallet.entryPrice);\n            \n            winningTrades++;\n            totalProfit += pnl;\n            \n            wallet.balance += sellValue;\n            wallet.coin = 0;\n            wallet.inPosition = false;\n            totalTrades++;\n            \n            trades.push({\n                date: d.date, ticker, price,\n                decision: 'sell', action: 'sell',\n                pnl: pnl.toFixed(2),\n                rsi: rsi.toFixed(2),\n                sentiment: 'take_profit',\n                fear_greed: analysis.fear_greed_index,\n                equity: wallet.balance.toFixed(2),\n                reason: `TAKE PROFIT: +${profitPercent.toFixed(1)}%`\n            });\n            continue;\n        }\n    }\n\n    // === ТОРГОВАЯ ЛОГИКА ===\n    let decision = 'hold';\n    let reason = '';\n    \n    const fearGreed = analysis.fear_greed_index;\n    const sentiment = analysis.sentiment_score;\n    const trend = analysis.trend_strength;\n    const reversal = analysis.reversal_probability;\n    const risk = analysis.risk_level;\n    const llmAction = analysis.recommended_action;\n    const confidence = analysis.confidence;\n    \n    // Составной score\n    let score = 0;\n    score += sentiment * 30;\n    score += (fearGreed - 50) * 0.5;\n    score += (trend - 0.5) * 20;\n    score -= reversal * 15;\n    \n    // Risk check\n    if (risk === 'extreme') {\n        decision = 'sell';\n        reason = `EXTREME RISK: fear=${fearGreed}`;\n    } \n    else if (rsi > 75) {\n        decision = 'sell';\n        reason = `RSI OVERBOUGHT: ${rsi.toFixed(1)}`;\n    }\n    else if (rsi < 25) {\n        decision = 'buy';\n        reason = `RSI OVERSOLD: ${rsi.toFixed(1)}`;\n    }\n    else if (volatility > 0.06) {\n        decision = 'hold';\n        reason = `HIGH VOLATILITY: ${(volatility*100).toFixed(1)}%`;\n    }\n    else if (confidence < 0.3) {\n        decision = 'hold';\n        reason = `LOW CONFIDENCE: ${(confidence*100).toFixed(0)}%`;\n    }\n    else {\n        if (score > 20 && llmAction === 'buy') {\n            decision = 'buy';\n            reason = `BUY: score=${score.toFixed(1)}, fear=${fearGreed}, conf=${(confidence*100).toFixed(0)}%`;\n        }\n        else if (score < -10 || llmAction === 'sell') {\n            decision = 'sell';\n            reason = `SELL: score=${score.toFixed(1)}, fear=${fearGreed}, conf=${(confidence*100).toFixed(0)}%`;\n        }\n    }\n\n    if (decision === 'buy' && wallet.inPosition) {\n        decision = 'hold';\n        reason = `HOLD: Already in position`;\n    }\n\n    // Исполнение\n    let action = 'none';\n    let pnl = 0;\n\n    if (decision === 'buy' && !wallet.inPosition) {\n        const amountToInvest = wallet.balance * ALLOCATION_PERCENT;\n        wallet.entryPrice = price;\n        wallet.coin = amountToInvest / price;\n        wallet.balance -= amountToInvest;\n        wallet.inPosition = true;\n        action = 'buy';\n    } \n    else if (decision === 'sell' && wallet.inPosition) {\n        const sellValue = wallet.coin * price;\n        pnl = sellValue - (wallet.coin * wallet.entryPrice);\n        \n        if (pnl > 0) winningTrades++;\n        else totalLoss += Math.abs(pnl);\n        \n        wallet.balance += sellValue;\n        wallet.coin = 0;\n        wallet.inPosition = false;\n        totalTrades++;\n        action = 'sell';\n    }\n\n    const equity = wallet.inPosition ? (wallet.coin * price) : wallet.balance;\n    wallet.lastEquity = equity;\n\n    trades.push({\n        date: d.date,\n        ticker: ticker,\n        price: price,\n        decision: decision,\n        action: action,\n        pnl: pnl !== 0 ? pnl.toFixed(2) : '',\n        rsi: rsi.toFixed(2),\n        sentiment: analysis.sentiment,\n        sentiment_score: analysis.sentiment_score.toFixed(2),\n        fear_greed: fearGreed,\n        trend: trend.toFixed(2),\n        risk: risk,\n        confidence: (confidence*100).toFixed(0) + '%',\n        equity: equity.toFixed(2),\n        reason: reason\n    });\n}\n\n// Расчет метрик\nconst dateEquityMap = {};\nconst uniqueDates = [...new Set(trades.map(t => t.date))].sort();\n\ntrades.forEach(t => {\n    if (!dateEquityMap[t.date]) dateEquityMap[t.date] = 0;\n    dateEquityMap[t.date] += parseFloat(t.equity);\n});\n\nconst equityCurve = uniqueDates.map(d => dateEquityMap[d]);\n\nlet peak = -Infinity;\nlet maxDrawdown = 0;\nconst dailyReturns = [];\n\nfor (const eq of equityCurve) {\n    if (eq > peak) peak = eq;\n    const dd = (peak - eq) / peak;\n    if (dd > maxDrawdown) maxDrawdown = dd;\n}\n\nfor (let i = 1; i < equityCurve.length; i++) {\n    const prev = equityCurve[i-1];\n    const curr = equityCurve[i];\n    const ret = prev !== 0 ? (curr - prev) / prev : 0;\n    dailyReturns.push(ret);\n}\n\nconst avgRet = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length || 0;\nconst stdDev = Math.sqrt(dailyReturns.reduce((a, b) => a + Math.pow(b - avgRet, 2), 0) / dailyReturns.length || 0);\nconst sharpe = stdDev !== 0 ? (avgRet / stdDev) * Math.sqrt(365) : 0;\n\nconst finalEquity = equityCurve[equityCurve.length - 1] || 10000;\nconst totalReturn = ((finalEquity - 10000) / 10000) * 100;\nconst winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;\n\nreturn [{\n  json: {\n    metric_summary: {\n      \"Total Trades\": totalTrades,\n      \"Win Rate\": winRate.toFixed(2) + \"%\",\n      \"Total Return\": totalReturn.toFixed(2) + \"%\",\n      \"Sharpe Ratio\": sharpe.toFixed(2),\n      \"Max Drawdown\": \"-\" + (maxDrawdown * 100).toFixed(2) + \"%\",\n      \"Final Balance\": \"$\" + finalEquity.toFixed(2)\n    },\n    trade_log: trades\n  }\n}];"
+      },
+      "id": "84b8d250-e797-4d05-bf47-14fa0a527b7c",
+      "name": "6. xAI Grok Strategy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17136,
+        3696
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst trades = input.json.trade_log;\nconst summary = input.json.metric_summary;\n\nif (!trades) throw new Error(\"No trade data\");\n\nconst header = 'date,ticker,price,decision,rsi,sentiment,fear_greed,trend,risk,confidence,reason\\n';\nconst csvRows = trades.map(t => {\n  const safeReason = (t.reason || '').replace(/\"/g, \"'\");\n  return `${t.date},${t.ticker},${t.price},${t.decision},${t.rsi},${t.sentiment},${t.fear_greed},${t.trend},${t.risk},${t.confidence},\"${safeReason}\"`;\n}).join('\\n');\n\nconst csvContent = header + csvRows;\n\nreturn [{\n  json: {\n    summary: summary,\n    message: \"CSV Ready\"\n  },\n  binary: {\n    data: {\n      data: Buffer.from(csvContent).toString('base64'),\n      mimeType: 'text/csv',\n      fileName: 'trade_log.csv'\n    }\n  }\n}];"
+      },
+      "id": "c8482903-5519-48a6-9210-f64c53743bf1",
+      "name": "7. Export CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17392,
+        3696
+      ]
+    }
+  ],
+  "connections": {
+    "Start Bot": {
+      "main": [
+        [
+          {
+            "node": "1. Load Market Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "2. Load News Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Load Market Data": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV (Market)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Load News Data": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV (News)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV (Market)": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV (News)": {
+      "main": [
+        [
+          {
+            "node": "Group News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group News": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait for Both": {
+      "main": [
+        [
+          {
+            "node": "3. Merge Daily Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Merge Daily Data": {
+      "main": [
+        [
+          {
+            "node": "4. Prepare Prompts for xAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Prepare Prompts for xAI": {
+      "main": [
+        [
+          {
+            "node": "5. Call xAI Grok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Call xAI Grok": {
+      "main": [
+        [
+          {
+            "node": "6. xAI Grok Strategy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. xAI Grok Strategy": {
+      "main": [
+        [
+          {
+            "node": "7. Export CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

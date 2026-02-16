@@ -124,7 +124,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ \n  {\n    \"model\": \"grok-2-latest\",\n    \"messages\": $json.batch_prompts,\n    \"temperature\": 0.1,\n    \"max_tokens\": 500,\n    \"stream\": false\n  }\n}}",
+        "jsonBody": "={{ \n  {\n    \"model\": \"grok-2-latest\",\n    \"messages\": $json.batch_prompts,\n    \"temperature\": 0.1,\n    \"max_tokens\": 500\n  }\n}}",
         "options": {}
       },
       "id": "a9cd3e2c-7bbd-4acb-a0c3-f6efa2a6eeeb",
